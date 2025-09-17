@@ -1,0 +1,257 @@
+/* ===== 공통 래퍼 ===== */
+.hd {
+    --hd-font: 13px;
+    --hd-height: 36px;
+
+    /* 파이차트/결과 텍스트 공통 색 변수(따뜻한 계열) */
+    --color-correct: #fbc02d;
+    /* 머스터드 옐로우 */
+    --color-wrong: #f57c00;
+    /* 웜 오렌지 */
+    --color-unsolved: #b0bec5;
+    /* 차분한 그레이 */
+}
+
+/* ===== 페이지 레이아웃 ===== */
+.hd-page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px 16px;
+}
+
+.hd-title {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0 0 16px;
+}
+
+.hd-main {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+    .hd-main {
+        grid-template-columns: 7fr 5fr;
+    }
+}
+
+/* ===== 카드 ===== */
+.hd-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #fff;
+    overflow: hidden;
+}
+
+.hd-card-header {
+    padding: 10px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #f1f5f9;
+    font-weight: 600;
+}
+
+.hd-card-body {
+    padding: 12px;
+}
+
+.hd-small {
+    font-size: 12px;
+    color: #64748b;
+}
+
+/* ===== 필터 영역 ===== */
+.hd .hd-filters {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    align-items: end;
+    margin-bottom: 12px;
+}
+
+.hd .hd-label {
+    font-size: 11px;
+    color: #475569;
+    margin-bottom: 4px;
+}
+
+.hd .hd-filters input[type="date"],
+.hd .hd-filters input[type="text"],
+.hd .hd-filters input[type="search"],
+.hd .hd-filters select {
+    box-sizing: border-box;
+    width: 100%;
+    height: var(--hd-height);
+    padding: 0 8px;
+    font-size: var(--hd-font);
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: #fff;
+}
+
+/* ===== 툴바 ===== */
+.hd .hd-toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.hd .hd-toolbar select {
+    height: var(--hd-height);
+    width: 100px;
+    /* 동일 폭 */
+    font-size: var(--hd-font);
+    padding: 0 8px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: #fff;
+    box-sizing: border-box;
+}
+
+/* ===== 표 ===== */
+.hd-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.hd-table thead {
+    background: #f8fafc;
+}
+
+.hd-table th,
+.hd-table td {
+    padding: 6px 6px;
+    border-bottom: 1px solid #eef2f7;
+    text-align: left;
+}
+
+.hd-table td.right {
+    text-align: right;
+}
+
+/* ===== 페이지네이션 ===== */
+.hd-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.hd-muted {
+    color: #64748b;
+    font-size: 13px;
+}
+
+.hd .hd-pagination .hd-btn,
+.hd .hd-pagination button {
+    height: var(--hd-height);
+    width: 70px;
+    /* 네 버튼 동일 폭 */
+    font-size: var(--hd-font);
+    padding: 0px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+}
+
+.hd .hd-pagination .hd-btn:disabled,
+.hd .hd-pagination button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* ===== 오른쪽 카드 묶음 ===== */
+.hd-right {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-top: 24px;
+}
+
+/* ===== 파이차트 카드 (높이 확장) ===== */
+.hd-card.chart-card {
+    min-height: 460px;   /* 기존보다 더 크게 */
+}
+
+.hd-card.chart-card .hd-card-body {
+    padding: 0;
+}
+
+.hd-card.chart-card .chart-wrapper {
+    height: 420px;      /* 실제 차트 영역 높이 */
+}
+
+
+/* 성과 요약 카드 높이 고정 */
+.hd-card.summary-card {
+    min-height: 245px;   /* 원하는 값으로 수정 */
+    display: flex;            /* 카드 자체를 flex 컨테이너 */
+    flex-direction: column;
+}
+
+
+.hd-card.summary-card .hd-card-body {
+    flex: 1;                  /* 남는 공간 차지 */
+    display: flex;
+    align-items: center;      /* 세로 중앙 정렬 */
+    font-size: 16px;          /* 글씨 조금 크게 */
+    line-height: 1.6;         /* 줄간격 넉넉히 */
+}
+
+/* ===== 이력 테이블 스크롤 영역(고정 높이) ===== */
+.hd-table-scroll {
+    height: 550px;
+    /* PC 고정 높이 */
+    overflow-y: auto;
+    border-top: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+/* 헤더 고정 + 배경 일치 */
+.hd-table thead th {
+    position: sticky;
+    top: 0;
+    background: #f8fafc;
+    /* thead 배경과 동일 */
+    z-index: 1;
+}
+
+/* ===== 스크롤바(차분한 옅은 노랑) ===== */
+.hd-table-scroll::-webkit-scrollbar {
+    width: 8px;
+}
+
+.hd-table-scroll::-webkit-scrollbar-thumb {
+    background-color: #fffde7;
+    border-radius: 4px;
+}
+
+.hd-table-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: #fff9c4;
+}
+
+.hd-table-scroll::-webkit-scrollbar-track {
+    background-color: #ffffff;
+}
+
+/* ===== 결과 색상(텍스트) ===== */
+.hd-result-correct {
+    color: var(--color-correct);
+    font-weight: 600;
+}
+
+.hd-result-wrong {
+    color: var(--color-wrong);
+    font-weight: 600;
+}
+
+.hd-result-unsolved {
+    color: var(--color-unsolved);
+    font-weight: 600;
+}
+
+

@@ -1,0 +1,27 @@
+<!-- resources/mappers/QuotesMapper.xml -->
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.shinhan.backend.simulation.mapper.QuotesMapper">
+
+    <resultMap id="QuoteRowMap" type="com.shinhan.backend.simulation.dto.QuoteRowDto">
+        <result column="date"        property="date"/>
+        <result column="fx_rate"     property="fx_rate"/>
+        <result column="vix"         property="vix"/>
+        <result column="etf_volume"  property="etf_volume"/>
+        <result column="gold_close"  property="gold_close"/>
+        <result column="pred_close"  property="pred_close"/>
+    </resultMap>
+
+    <select id="selectQuotes" resultMap="QuoteRowMap">
+        SELECT
+            DATE_FORMAT(`Date`, '%Y-%m-%d') AS date,
+      FX_RATE      AS fx_rate,
+      VIX          AS vix,
+      ETF_VOLUME   AS etf_volume,
+      KRW_G_CLOSE  AS gold_close,
+      NULL         AS pred_close
+        FROM QUOTES_DAILY
+        WHERE `Date` BETWEEN #{from} AND #{to}
+        ORDER BY `Date` ASC
+    </select>
+</mapper>

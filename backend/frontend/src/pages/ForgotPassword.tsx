@@ -5,7 +5,7 @@ import AuthCard from "../components/AuthCard";
 
 export default function ForgotPassword() {
   const [memberId, setMemberId] = useState("");
-  const [email, setEmail] = useState("");
+  const [memberEmail, setEmail] = useState("");
   const [done, setDone] = useState(false);
   const [err, setErr] = useState("");
 
@@ -15,7 +15,7 @@ export default function ForgotPassword() {
     const res = await fetch("/api/auth/forgotPassword", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ memberId, email }),
+      body: JSON.stringify({ memberId, memberEmail }),
     });
     if (res.ok) setDone(true);
     else setErr("요청을 처리할 수 없습니다.");
@@ -36,7 +36,7 @@ export default function ForgotPassword() {
           </div>
           <div className="field">
             <label htmlFor="fem">이메일</label>
-            <input id="fem" type="email" value={email} onChange={e => setEmail(e.target.value)} required />
+            <input id="fem" type="email" value={memberEmail} onChange={e => setEmail(e.target.value)} required />
           </div>
           {err && <div className="auth-error">{err}</div>}
           <button type="submit">임시 비밀번호 발송</button>

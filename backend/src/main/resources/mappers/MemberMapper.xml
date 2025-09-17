@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.shinhan.backend.mapper.MemberMapper">
+<mapper namespace="com.shinhan.backend.member.mapper.MemberMapper">
 
     <!-- 권한 매핑 -->
-    <resultMap id="MemberAuthMap" type="com.shinhan.backend.domain.MemberAuth">
+    <resultMap id="MemberAuthMap" type="com.shinhan.backend.member.domain.MemberAuth">
         <id     property="no"       column="no"/>
         <result property="memberId" column="memberId"/>
         <result property="auth"     column="auth"/>
     </resultMap>
 
     <!-- 회원 매핑 -->
-    <resultMap id="MemberMap" type="com.shinhan.backend.domain.Member">
+    <resultMap id="MemberMap" type="com.shinhan.backend.member.domain.Member">
         <id     property="memberNo"        column="memberNo"/>
         <result property="memberId"        column="memberId"/>
         <result property="memberPwd"       column="memberPwd"/>
@@ -24,12 +24,12 @@
         <result property="memberLastLogin" column="memberLastLogin"/>
         <result property="memberDeletedAt" column="memberDeletedAt"/>
 
-        <collection property="authList" ofType="com.shinhan.backend.domain.MemberAuth"
+        <collection property="authList" ofType="com.shinhan.backend.member.domain.MemberAuth"
                     select="findAuthsByMemberId" column="memberId"/>
     </resultMap>
 
     <!-- 회원 저장 -->
-    <insert id="insertMember" parameterType="com.shinhan.backend.domain.Member"
+    <insert id="insertMember" parameterType="com.shinhan.backend.member.domain.Member"
             useGeneratedKeys="true" keyProperty="memberNo">
         INSERT INTO MEMBERS
         (MEMBER_ID, MEMBER_PWD, MEMBER_NAME, MEMBER_EMAIL, MEMBER_ROLE, MEMBER_IS_ACTIVE,
@@ -39,7 +39,7 @@
     </insert>
 
     <!-- 권한 저장 -->
-    <insert id="insertAuth" parameterType="com.shinhan.backend.domain.MemberAuth"
+    <insert id="insertAuth" parameterType="com.shinhan.backend.member.domain.MemberAuth"
             useGeneratedKeys="true" keyProperty="no">
         INSERT INTO MEMBER_AUTH (MEMBER_ID, AUTH)
         VALUES (#{memberId}, #{auth})
@@ -69,6 +69,8 @@
              , MEMBER_DELETED_AT    AS memberDeletedAt
           FROM MEMBERS
          WHERE MEMBER_ID = #{memberId}
+           AND MEMBER_IS_ACTIVE = 1
+           AND MEMBER_DELETED_AT IS NULL
     </select>
 
     <!-- 권한 리스트 조회 -->

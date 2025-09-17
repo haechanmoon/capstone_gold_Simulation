@@ -1,304 +1,234 @@
 // src/pages/SimulationDashboard.tsx
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import {
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  Legend,
-  PieChart,
-  Pie,
-  Cell,
+  ResponsiveContainer, LineChart, Line,
+  XAxis, YAxis, Tooltip, CartesianGrid, Legend,
 } from "recharts";
+import "../styles/SimulationDashboard.css";
 
-type SimParams = {
-  capital: number;     // 초기 자본
-  horizon: number;     // 일수
-  risk: number;        // 0~100
-  scenario: "보수" | "중립" | "공격";
+const DATA_MIN = "2015-01-01";
+const DATA_MAX = "2024-12-31";
+
+type Row = {
+  date: string;
+  fx_rate: number | null;
+  vix: number | null;
+  etf_volume: number | null;
+  gold_close: number | null;
+  pred_close: number | null;
 };
 
-type SimKpis = {
-  finalValue: number;
-  pnlPct: number;      // %
-  mddPct: number;      // %
-  winRatePct: number;  // %
-  trades: number;
-};
+type Unit = "10y" | "5y" | "1y" | "3m" | "1m" | "1w";
+const UNITS: { key: Unit; label: string; days: number }[] = [
+  { key: "10y", label: "10년", days: 3650 },
+  { key: "5y",  label: "5년",  days: 1825 },
+  { key: "1y",  label: "1년",  days: 365 },
+  { key: "3m",  label: "3개월", days: 90 },
+  { key: "1m",  label: "1개월", days: 30 },
+  { key: "1w",  label: "1주일", days: 7 },
+];
 
-type EquityPoint = { day: string; value: number };
-type SimResult = { equity: EquityPoint[]; kpis: SimKpis; dist: { win: number; lose: number; flat: number } };
+const nf0 = (n: number) => new Intl.NumberFormat().format(n ?? 0);
+const nf1 = (n: number) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(n ?? 0);
 
-type Summary = {
-  // 최근 30일 개요(선택)
-  runs: number;
-  avgPnL: number;
-  bestPnL: number;
-  worstPnL: number;
-};
-
-const fmt = (n: number, d = 2) =>
-  new Intl.NumberFormat(undefined, { maximumFractionDigits: d, minimumFractionDigits: d }).format(n);
-
-// 백엔드 연결 시 false로
-const USE_MOCK = true;
-
-// ===== 실제 API =====
-async function postSimulate(p: SimParams): Promise<SimResult> {
-  if (USE_MOCK) return mockSimulate(p);
-  const res = await fetch("/api/simulation/run", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify(p),
-  });
-  if (!res.ok) throw new Error(`simulate:${res.status}`);
-  return res.json();
+/** series별 min–max 스케일링(0~500). null은 그대로 유지 */
+function minMaxScale(values: (number | null | undefined)[]) {
+  const nums = values.filter((v): v is number => v != null && isFinite(v));
+  if (!nums.length) return { to: (_: number | null | undefined) => null };
+  const min = Math.min(...nums);
+  const max = Math.max(...nums);
+  const span = max - min || 1;
+  return { to: (v: number | null | undefined) => (v == null ? null : ((v - min) / span) * 500) };
 }
 
-async function getSummary(): Promise<Summary> {
-  if (USE_MOCK) return mockSummary();
-  const res = await fetch("/api/simulation/summary", { credentials: "include" });
-  if (!res.ok) throw new Error(`summary:${res.status}`);
-  return res.json();
-}
-
-// ===== 목업 =====
-function mockSimulate(p: SimParams): Promise<SimResult> {
-  const days = Math.max(10, Math.min(120, p.horizon));
-  const drift = p.scenario === "보수" ? 0.0008 : p.scenario === "중립" ? 0.0012 : 0.0018;
-  const vol = (p.risk / 100) * 0.02 + 0.005;
-  let equity = p.capital;
-  let peak = equity;
-  let maxDrawdown = 0;
-  const eq: EquityPoint[] = [];
-  let wins = 0, loses = 0, flats = 0;
-
-  for (let i = 0; i < days; i++) {
-    const r = drift + (Math.random() - 0.5) * vol * 2;
-    const old = equity;
-    equity = Math.max(1, equity * (1 + r));
-    if (equity > peak) peak = equity;
-    const dd = (peak - equity) / peak;
-    if (dd > maxDrawdown) maxDrawdown = dd;
-
-    const delta = equity - old;
-    if (Math.abs(delta) < 1e-6) flats++;
-    else if (delta > 0) wins++;
-    else loses++;
-
-    eq.push({ day: String(i + 1), value: Number(equity.toFixed(2)) });
+/** 단위에 따른 X축 tick 개수와 포맷 문자열 */
+function xTickConfig(unit: Unit): { count: number; fmt: "yyyy" | "yyyy-MM" | "MM-dd" } {
+  switch (unit) {
+    case "10y": return { count: 12, fmt: "yyyy" };
+    case "5y":  return { count: 10, fmt: "yyyy" };
+    case "1y":  return { count: 12, fmt: "yyyy-MM" };
+    case "3m":  return { count: 8,  fmt: "MM-dd" };
+    case "1m":  return { count: 8,  fmt: "MM-dd" };
+    case "1w":  return { count: 7,  fmt: "MM-dd" };
   }
-
-  const pnlPct = ((equity - p.capital) / p.capital) * 100;
-  const winRate = wins / Math.max(1, wins + loses) * 100;
-
-  const kpis: SimKpis = {
-    finalValue: Number(equity.toFixed(2)),
-    pnlPct: Number(pnlPct.toFixed(2)),
-    mddPct: Number((maxDrawdown * 100).toFixed(2)),
-    winRatePct: Number(winRate.toFixed(2)),
-    trades: wins + loses + flats,
-  };
-  return Promise.resolve({
-    equity: eq,
-    kpis,
-    dist: { win: wins, lose: loses, flat: flats },
-  });
 }
 
-function mockSummary(): Promise<Summary> {
-  return Promise.resolve({ runs: 124, avgPnL: 2.7, bestPnL: 14.2, worstPnL: -9.6 });
+/** 외부 라이브러리 없이 yyyy-MM-dd 문자열을 간단히 포맷 */
+function formatDateStr(d: string, fmt: "yyyy" | "yyyy-MM" | "MM-dd") {
+  // 기대 포맷: "YYYY-MM-DD"
+  if (!d || d.length < 10) return d;
+  const yyyy = d.slice(0, 4);
+  const MM   = d.slice(5, 7);
+  const dd   = d.slice(8, 10);
+  if (fmt === "yyyy") return yyyy;
+  if (fmt === "yyyy-MM") return `${yyyy}-${MM}`;
+  return `${MM}-${dd}`; // "MM-dd"
 }
 
-// ===== 컴포넌트 =====
-export default function SimulationDashboard(): ReactNode {
-  const [params, setParams] = useState<SimParams>({ capital: 1_000_000, horizon: 30, risk: 40, scenario: "중립" });
+export default function SimulationDashboard() {
+  const [endDate, setEndDate] = useState<string>(DATA_MAX);
+  const [unit, setUnit] = useState<Unit>("1y");
+  const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
-  const [res, setRes] = useState<SimResult | null>(null);
-  const [sum, setSum] = useState<Summary | null>(null);
-  const [err, setErr] = useState<string>("");
+  const [err, setErr] = useState("");
 
   useEffect(() => {
-    let alive = true;
-    getSummary().then((s) => alive && setSum(s)).catch(() => {});
-    return () => { alive = false; };
-  }, []);
+    const safeEnd =
+      new Date(endDate) > new Date(DATA_MAX) ? DATA_MAX :
+      new Date(endDate) < new Date(DATA_MIN) ? DATA_MIN : endDate;
 
-  const run = async () => {
+    const qs = new URLSearchParams({ to: safeEnd, unit });
     setLoading(true);
     setErr("");
-    try {
-      const r = await postSimulate(params);
-      setRes(r);
-    } catch (e: any) {
-      setErr(e?.message || "시뮬레이션 실패");
-    } finally {
-      setLoading(false);
-    }
-  };
+    fetch(`/api/simulation/quotes?${qs.toString()}`, { credentials: "include" })
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then((data: Row[]) => setRows(data ?? []))
+      .catch((e) => setErr(e?.message || "데이터 로드 실패"))
+      .finally(() => setLoading(false));
+  }, [endDate, unit]);
 
-  const pieData = useMemo(() => {
-    if (!res) return [];
-    return [
-      { name: "이익", value: res.dist.win, key: "win" as const },
-      { name: "손실", value: res.dist.lose, key: "lose" as const },
-      { name: "변동없음", value: res.dist.flat, key: "flat" as const },
-    ];
-  }, [res]);
+  /** 그래프1 스케일링 */
+  const scaled = useMemo(() => {
+    if (!rows.length) return [];
+    const fxScale  = minMaxScale(rows.map((r) => r.fx_rate));
+    const vixScale = minMaxScale(rows.map((r) => r.vix));
+    const etfM     = rows.map((r) => (r.etf_volume == null ? null : r.etf_volume / 1_000_000));
+    const etfScale = minMaxScale(etfM);
 
-  const COLORS = ["#16a34a", "#ef4444", "#9ca3af"];
+    return rows.map((r, i) => ({
+      ...r,
+      fx_s:  fxScale.to(r.fx_rate),
+      vix_s: vixScale.to(r.vix),
+      etf_s: etfScale.to(etfM[i]),
+      _etf_m: etfM[i],
+    }));
+  }, [rows]);
+
+  const rangeText = rows.length ? `${rows[0].date} ~ ${rows[rows.length - 1].date}` : "-";
+  const { count: xTickCount, fmt } = xTickConfig(unit);
+  const xTickFormatter = (d: string) => formatDateStr(d, fmt);
 
   return (
-    <div className="p-4 md:p-6 w-full mx-auto max-w-[1200px]">
-      <h1 className="text-2xl font-semibold mb-4">시뮬레이션 대시보드</h1>
-
-      {/* 상단 컨트롤 */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-4">
-        <div className="md:col-span-3">
-          <label className="block text-sm mb-1">초기 자본(원)</label>
+    <div className="sim-wrap">
+      <div className="sim-controls">
+        <div className="field">
+          <label>종료일</label>
           <input
-            type="number"
-            className="w-full border rounded-md p-2"
-            value={params.capital}
-            onChange={(e) => setParams((p) => ({ ...p, capital: Math.max(1, Number(e.target.value || 0)) }))}
+            type="date"
+            min={DATA_MIN}
+            max={DATA_MAX}
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
           />
         </div>
-        <div className="md:col-span-3">
-          <label className="block text-sm mb-1">기간(일)</label>
-          <input
-            type="number"
-            className="w-full border rounded-md p-2"
-            value={params.horizon}
-            onChange={(e) => setParams((p) => ({ ...p, horizon: Math.max(10, Math.min(180, Number(e.target.value || 0))) }))}
-          />
-        </div>
-        <div className="md:col-span-3">
-          <label className="block text-sm mb-1">리스크(0~100)</label>
-          <input
-            type="range"
-            className="w-full"
-            min={0}
-            max={100}
-            value={params.risk}
-            onChange={(e) => setParams((p) => ({ ...p, risk: Number(e.target.value) }))}
-          />
-          <div className="text-xs text-gray-600 mt-1">{params.risk}</div>
-        </div>
-        <div className="md:col-span-2">
-          <label className="block text-sm mb-1">시나리오</label>
-          <select
-            className="w-full border rounded-md p-2"
-            value={params.scenario}
-            onChange={(e) => setParams((p) => ({ ...p, scenario: e.target.value as SimParams["scenario"] }))}
-          >
-            <option value="보수">보수</option>
-            <option value="중립">중립</option>
-            <option value="공격">공격</option>
-          </select>
-        </div>
-        <div className="md:col-span-1 flex items-end">
-          <button
-            className="w-full border rounded-md p-2 bg-black text-white disabled:opacity-50"
-            onClick={run}
-            disabled={loading}
-          >
-            {loading ? "실행 중" : "실행"}
-          </button>
+        <div className="unit-group">
+          {UNITS.map((u) => (
+            <button
+              key={u.key}
+              className={`unit ${unit === u.key ? "active" : ""}`}
+              onClick={() => setUnit(u.key)}
+            >
+              {u.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* 개요 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-        <div className="border rounded-xl p-3">
-          <div className="text-sm text-gray-500">최근 실행 수</div>
-          <div className="text-xl font-semibold">{sum?.runs ?? "-"}</div>
-        </div>
-        <div className="border rounded-xl p-3">
-          <div className="text-sm text-gray-500">평균 수익률</div>
-          <div className="text-xl font-semibold">{sum ? `${fmt(sum.avgPnL)}%` : "-"}</div>
-        </div>
-        <div className="border rounded-xl p-3">
-          <div className="text-sm text-gray-500">최고 수익률</div>
-          <div className="text-xl font-semibold">{sum ? `${fmt(sum.bestPnL)}%` : "-"}</div>
-        </div>
-        <div className="border rounded-xl p-3">
-          <div className="text-sm text-gray-500">최저 수익률</div>
-          <div className="text-xl font-semibold">{sum ? `${fmt(sum.worstPnL)}%` : "-"}</div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-        {/* 좌: 자본곡선 */}
-        <div className="md:col-span-8">
-          <div className="border rounded-xl p-3">
-            <div className="text-lg font-medium mb-2">자본 곡선</div>
-            <div className="h-80">
-              {res?.equity?.length ? (
+      <div className="sim-grid">
+        <div className="sim-left">
+          {/* 그래프 1 */}
+          <section className="card">
+            <div className="card-head">
+              <h2>환율 / VIX / ETF 거래량 · 스케일(0~500)</h2>
+              <span className="muted">{rangeText}</span>
+            </div>
+            <div className="card-body chart-300">
+              {loading ? (
+                <div className="empty">불러오는 중</div>
+              ) : !scaled.length ? (
+                <div className="empty">데이터 없음</div>
+              ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={res.equity}>
+                  <LineChart data={scaled}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="day" />
-                    <YAxis />
-                    <Tooltip />
+                    <XAxis
+                      dataKey="date"
+                      interval="preserveStartEnd"
+                      tickCount={xTickCount}
+                      tickFormatter={xTickFormatter}
+                    />
+                    <YAxis tick={false} axisLine={false} width={0} />
+                    <Tooltip
+                      formatter={(v: any, name: any, p: any) => {
+                        const row = p?.payload as any;
+                        if (p.dataKey === "fx_s")  return [`${(v as number).toFixed(1)}`, `환율(원값 ${nf0(row.fx_rate)})`];
+                        if (p.dataKey === "vix_s") return [`${(v as number).toFixed(1)}`, `VIX(원값 ${nf1(row.vix)})`];
+                        if (p.dataKey === "etf_s") return [`${(v as number).toFixed(1)}`, `ETF(원값 ${nf1(row._etf_m)}M)`];
+                        return [v, name];
+                      }}
+                    />
                     <Legend />
-                    <Line type="monotone" dataKey="value" stroke="#2563eb" dot={false} name="자본" />
+                    <Line type="monotone" dataKey="fx_s"  name="환율(지수)"     stroke="#2563eb" dot={false} />
+                    <Line type="monotone" dataKey="vix_s" name="VIX(지수)"      stroke="#f59e0b" dot={false} />
+                    <Line type="monotone" dataKey="etf_s" name="ETF거래량(지수)" stroke="#10b981" dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-gray-500">실행 결과 없음</div>
               )}
             </div>
-          </div>
-        </div>
+          </section>
 
-        {/* 우: 분포 + KPI */}
-        <div className="md:col-span-4">
-          <div className="border rounded-xl p-3 mb-4">
-            <div className="text-lg font-medium mb-2">승/패/보 분포</div>
-            <div className="h-64">
-              {res ? (
+          {/* 그래프 2 */}
+          <section className="card">
+            <div className="card-head">
+              <h2>금 시세 vs LSTM 예측</h2>
+              <span className="muted">{rangeText}</span>
+            </div>
+            <div className="card-body chart-320">
+              {loading ? (
+                <div className="empty">불러오는 중</div>
+              ) : !rows.length ? (
+                <div className="empty">데이터 없음</div>
+              ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie dataKey="value" data={pieData} innerRadius={55} outerRadius={85} label>
-                      {pieData.map((e, i) => <Cell key={e.key} fill={COLORS[i % COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip formatter={(v: number) => `${v}건`} />
+                  <LineChart data={rows}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="date"
+                      interval="preserveStartEnd"
+                      tickCount={xTickCount}
+                      tickFormatter={xTickFormatter}
+                    />
+                    <YAxis tick={false} axisLine={false} width={0} />
+                    <Tooltip
+                      formatter={(v: any, name: any, p: any) => {
+                        if (p.dataKey === "gold_close") return [nf1(v), "실제 금 시세"];
+                        if (p.dataKey === "pred_close") return [nf1(v), "예측 금 시세"];
+                        return [v, name];
+                      }}
+                    />
                     <Legend />
-                  </PieChart>
+                    <Line type="monotone" dataKey="gold_close" name="실제 금 시세" stroke="#3b82f6" dot={false} />
+                    <Line type="monotone" dataKey="pred_close" name="예측 금 시세" stroke="#ef4444" dot={false} />
+                  </LineChart>
                 </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-gray-500">실행 결과 없음</div>
               )}
             </div>
-          </div>
-
-          <div className="border rounded-xl p-3 grid grid-cols-2 gap-3">
-            <div>
-              <div className="text-xs text-gray-500">최종 자본</div>
-              <div className="text-lg font-semibold">{res ? fmt(res.kpis.finalValue, 0) : "-"}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">수익률</div>
-              <div className="text-lg font-semibold">{res ? `${fmt(res.kpis.pnlPct)}%` : "-"}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">최대낙폭(MDD)</div>
-              <div className="text-lg font-semibold">{res ? `${fmt(res.kpis.mddPct)}%` : "-"}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">승률</div>
-              <div className="text-lg font-semibold">{res ? `${fmt(res.kpis.winRatePct)}%` : "-"}</div>
-            </div>
-          </div>
+          </section>
         </div>
+
+        {/* 뉴스 */}
+        <aside className="card news">
+          <div className="card-head">
+            <h2>관련 뉴스</h2>
+            <span className="muted">최근 0건</span>
+          </div>
+          <div className="card-body news-body">
+            <div className="empty">뉴스 없음</div>
+          </div>
+        </aside>
       </div>
 
-      {err && <div className="mt-3 text-sm text-red-600">{err}</div>}
+      {err && <div className="err">{err}</div>}
     </div>
   );
 }

@@ -14,7 +14,6 @@ public class WebConfig implements WebMvcConfigurer {
         r.addViewController("/login").setViewName("forward:/index.html");
         r.addViewController("/signup").setViewName("forward:/index.html");
         r.addViewController("/forgotPassword").setViewName("forward:/index.html");
-        r.addViewController("/mypage").setViewName("forward:/index.html");
         r.addViewController("/updatePassword").setViewName("forward:/index.html");
         r.addViewController("/deleteAccount").setViewName("forward:/index.html");
 

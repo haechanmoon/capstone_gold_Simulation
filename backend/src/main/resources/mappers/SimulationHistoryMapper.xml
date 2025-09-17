@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.shinhan.backend.simulationHistory.mapper.SimulationHistoryMapper">
+
+    <!-- 도메인: com.shinhan.backend.simulationHistory.domain.SimulationHistory -->
+    <resultMap id="SimulationHistoryMap" type="com.shinhan.backend.simulationHistory.domain.SimulationHistory">
+        <id     property="historyNo"     column="HISTORY_NO"/>
+        <result property="memberNo"      column="MEMBER_NO"/>
+        <result property="historyDate"   column="HISTORY_DATE"/>
+        <result property="historyType"   column="HISTORY_TYPE"/>
+        <result property="historyPredict" column="HISTORY_PREDICT"/>
+        <result property="historyResult"  column="HISTORY_RESULT"/>
+        <result property="pnl"           column="PNL"/>
+        <result property="favorite"      column="FAVORITE"/>  <!-- TINYINT(1) -> Boolean -->
+        <result property="tags"          column="TAGS"/>
+        <result property="note"          column="NOTE"/>
+        <result property="createdAt"     column="CREATED_AT"/>
+    </resultMap>
+
+    <select id="selectHistory" parameterType="map" resultMap="SimulationHistoryMap">
+        SELECT HISTORY_NO
+             , MEMBER_NO
+             , DATE_FORMAT(HISTORY_DATE, '%Y-%m-%d') AS HISTORY_DATE
+             , HISTORY_TYPE                              -- ADD
+             , HISTORY_PREDICT
+             , HISTORY_RESULT
+             , PNL
+             , FAVORITE
+             , TAGS
+             , NOTE
+             , CREATED_AT
+          FROM SIMULATION_HISTORY
+         WHERE MEMBER_NO = #{memberNo}
+           AND HISTORY_DATE BETWEEN #{from} AND #{to}
+           AND (#{type} IS NULL OR #{type} = '' OR HISTORY_TYPE = #{type})  <!-- ADD -->
+        <choose>
+            <when test="sort == 'date,asc'">ORDER BY HISTORY_DATE ASC, HISTORY_NO ASC</when>
+            <otherwise>ORDER BY HISTORY_DATE DESC, HISTORY_NO DESC</otherwise>
+        </choose>
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countHistory" parameterType="map" resultType="long">
+        SELECT COUNT(*)
+        FROM SIMULATION_HISTORY
+        WHERE MEMBER_NO = #{memberNo}
+        AND HISTORY_DATE BETWEEN #{from} AND #{to}
+        AND (#{type} IS NULL OR #{type} = '' OR HISTORY_TYPE = #{type})  <!-- ADD -->
+    </select>
+
+    <select id="selectHistoryStats" parameterType="map" resultType="map">
+        SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN SH.HISTORY_RESULT IS NOT NULL
+                AND SH.HISTORY_PREDICT = SH.HISTORY_RESULT THEN 1 ELSE 0 END) AS correct,
+            SUM(CASE WHEN SH.HISTORY_RESULT IS NOT NULL
+                AND SH.HISTORY_PREDICT != SH.HISTORY_RESULT THEN 1 ELSE 0 END) AS wrong,
+            COUNT(*)
+            - SUM(CASE WHEN SH.HISTORY_RESULT IS NOT NULL
+                AND SH.HISTORY_PREDICT = SH.HISTORY_RESULT THEN 1 ELSE 0 END)
+            - SUM(CASE WHEN SH.HISTORY_RESULT IS NOT NULL
+        AND SH.HISTORY_PREDICT != SH.HISTORY_RESULT THEN 1 ELSE 0 END) AS unsolved
+        FROM QUOTES_DAILY QD
+        LEFT JOIN SIMULATION_HISTORY SH
+        ON QD.DATE = SH.HISTORY_DATE
+        AND SH.MEMBER_NO = #{memberNo}
+        WHERE QD.DATE BETWEEN #{from} AND #{to}
+          AND (#{type} IS NULL OR #{type} = '' OR HISTORY_TYPE = #{type})
+    </select>
+
+    <select id="selectHistorySummary" parameterType="long" resultType="map">
+        SELECT
+            -- 전체 기간 기준
+            COUNT(*)                          AS total,
+            SUM(CASE WHEN HISTORY_RESULT = HISTORY_PREDICT THEN 1 ELSE 0 END) AS correct,
+            SUM(CASE WHEN HISTORY_RESULT != HISTORY_PREDICT THEN 1 ELSE 0 END) AS wrong,
+            SUM(COALESCE(PNL,0))              AS totalPnl,
+            AVG(COALESCE(PNL,0))              AS avgPnl,
+            MAX(COALESCE(PNL,0))              AS maxPnl,
+            MIN(COALESCE(PNL,0))              AS minPnl
+        FROM SIMULATION_HISTORY
+        WHERE MEMBER_NO = #{memberNo}
+    </select>
+
+</mapper>

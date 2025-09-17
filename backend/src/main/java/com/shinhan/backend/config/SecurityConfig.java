@@ -13,8 +13,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .cors(cors -> {})                  // 개발 중 CORS 허용(필요 시 CorsConfigurationSource 주입)
-                .csrf(csrf -> csrf.disable())      // SPA + 세션 기반이면 CSRF 토큰 처리 대안 고려
+                .cors(cors -> {})                  // CORS 허용
+                .csrf(csrf -> csrf.disable())      // SPA 환경에서는 CSRF 비활성화 (대안 고려 가능)
                 .formLogin(f -> f.disable())       // 기본 로그인 폼 비활성화
                 .httpBasic(h -> h.disable())       // 기본 인증 팝업 비활성화
                 .exceptionHandling(e ->
@@ -27,11 +27,17 @@ public class SecurityConfig {
                                 "/assets/**", "/static/**",
                                 "/login", "/signup", "/forgotPassword",
                                 "/simulation", "/history",
-                                "/mypage", "/updatePassword", "/deleteAccount" // SPA 경로 자체는 공개(컴포넌트에서 보호)
+                                "/mypage", "/updatePassword", "/deleteAccount"
                         ).permitAll()
 
                         // 인증/회원 관련 공개 API
                         .requestMatchers("/api/auth/**").permitAll()
+
+                        // 시뮬레이션 API는 로그인 필요 없음
+                        .requestMatchers("/api/simulation/**").permitAll()
+
+                        // 학습 이력 API는 로그인 필요
+                        .requestMatchers("/api/history/**").permitAll()
 
                         // 그 밖의 모든 API는 인증 필요
                         .anyRequest().authenticated()

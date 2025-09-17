@@ -5,7 +5,6 @@ import SimulationDashboard from "./pages/SimulationDashboard";
 import HistoryDashboard from "./pages/HistoryDashboard";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
-import MyPage from "./pages/MyPage";
 import TopBar from "./components/TopBar";
 import type { ReactNode } from "react";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -68,7 +67,6 @@ export default function App() {
 
         {/* 보호 라우트 */}
         <Route path="/history" element={<Protected authed={authed}><HistoryDashboard /></Protected>} />
-        <Route path="/mypage" element={<Protected authed={authed}><MyPage /></Protected>} />
         <Route path="/updatePassword" element={<Protected authed={authed}><ChangePassword /></Protected>} />
         <Route path="/deleteAccount" element={<Protected authed={authed}><DeleteAccount /></Protected>} />
 

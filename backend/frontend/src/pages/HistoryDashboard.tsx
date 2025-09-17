@@ -1,49 +1,36 @@
 // src/pages/HistoryDashboard.tsx
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
-import styled from "styled-components";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
+import "../styles/HistoryDashboard.css";
 
-/* ================= Types ================= */
 type ResultKind = "correct" | "wrong" | "unsolved";
-
 type HistoryItem = {
   id: number;
-  date: string;           // YYYY-MM-DD
-  type?: string;
-  question?: string;
+  date: string;
+  type: "매수" | "매도";
   answer?: string;
+  actual?: string;
   result: ResultKind;
   pnl?: number | null;
   note?: string | null;
 };
+type HistoryList = { items: HistoryItem[]; page: number; size: number; total: number };
+type Stats = { total: number; correct: number; wrong: number; unsolved: number; accuracy: number };
+type Filters = { from?: string; to?: string; type?: "" | "매수" | "매도"; sort?: string; page: number; size: number };
 
-type HistoryList = {
-  items: HistoryItem[];
-  page: number;
-  size: number;
-  total: number;
+const RANGE_MIN = "2023-01-01";
+const RANGE_MAX = "2024-12-31";
+
+// 레전드 고정 폭
+const LEGEND_W = 160;
+
+const clampDate = (v: string) => {
+  if (!v) return v;
+  if (v < RANGE_MIN) return RANGE_MIN;
+  if (v > RANGE_MAX) return RANGE_MAX;
+  return v;
 };
 
-type Stats = {
-  total: number;
-  correct: number;
-  wrong: number;
-  unsolved: number;
-  accuracy: number; // 0..1
-};
-
-type Filters = {
-  from?: string;
-  to?: string;
-  type?: string;
-  keyword?: string;
-  sort?: string; // e.g., "date,desc"
-  page: number;
-  size: number;
-};
-
-/* ================= Utils ================= */
 const qs = (obj: Record<string, unknown>) =>
   Object.entries(obj)
     .filter(([, v]) => v !== undefined && v !== null && v !== "")
@@ -53,157 +40,76 @@ const qs = (obj: Record<string, unknown>) =>
 const fmt = (n: number, d = 1) =>
   new Intl.NumberFormat(undefined, { maximumFractionDigits: d, minimumFractionDigits: d }).format(n);
 
-function defaultRange() {
-  const to = new Date();
-  const from = new Date();
-  from.setDate(to.getDate() - 29);
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
-}
-
-/* =============== API (with session) =============== */
 async function getHistory(filters: Filters): Promise<HistoryList> {
   const url = `/api/history?${qs(filters)}`;
   const res = await fetch(url, { credentials: "include" });
   if (!res.ok) throw new Error(`history:${res.status}`);
   return res.json();
 }
-
 async function getStats(filters: Filters): Promise<Stats> {
-  const url = `/api/history/stats?${qs({ from: filters.from, to: filters.to })}`;
+  const url = `/api/history/stats?${qs({ from: filters.from, to: filters.to, type: filters.type })}`;
   const res = await fetch(url, { credentials: "include" });
   if (!res.ok) throw new Error(`stats:${res.status}`);
   return res.json();
 }
 
-async function getInsights(filters: Filters): Promise<{ comment: string }> {
-  const url = `/api/history/insights?${qs({ from: filters.from, to: filters.to })}`;
-  const res = await fetch(url, { credentials: "include" });
-  if (!res.ok) throw new Error(`insights:${res.status}`);
-  return res.json();
+// 고정 성과 요약: 페이지 진입 시 1회만 호출
+async function getSummary(): Promise<{ comment: string }> {
+  const res = await fetch(`/api/history/summary`, { credentials: "include" });
+  if (!res.ok) throw new Error(`summary:${res.status}`);
+  const d = await res.json();
+
+  const buy = await getStats({ from: RANGE_MIN, to: RANGE_MAX, type: "매수", page: 1, size: 1 });
+  const sell = await getStats({ from: RANGE_MIN, to: RANGE_MAX, type: "매도", page: 1, size: 1 });
+
+  const pct = (x: number) => (isFinite(x) ? x * 100 : 0);
+  const sign = (x: number) => (x > 0 ? `+${fmt(x, 1)}` : fmt(x, 1));
+
+  const line1 = `누적 정답률: ${fmt(pct(d.accuracy ?? 0), 1)}% (총 ${d.total ?? 0}회)`;
+  const line2 = `매수 정답률 ${fmt(pct(buy.accuracy ?? 0), 0)}% (${buy.total ?? 0}회)`;
+  const line3 = `매도 정답률 ${fmt(pct(sell.accuracy ?? 0), 0)}% (${sell.total ?? 0}회)`;
+  const line4 = `총 손익: ${sign(d.totalPnl ?? 0)} (평균 ${sign(d.avgPnl ?? 0)})`;
+  const line5 = `최대 이익: ${fmt(d.maxPnl ?? 0, 1)}`;
+  const line6 = `최대 손실: ${fmt(d.minPnl ?? 0, 1)}`;
+
+  return { comment: [line1, line2, line3, line4, line5, line6].join("\n") };
 }
 
-/* ================= Styled ================= */
-const Page = styled.div`
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 24px 16px;
-`;
-const Title = styled.h1`
-  font-size: 28px;
-  font-weight: 700;
-  margin: 0 0 16px;
-`;
-const FiltersGrid = styled.div`
-  display: grid;
-  gap: 12px;
-  grid-template-columns: 1fr;
-  margin-bottom: 16px;
-  @media (min-width: 768px) {
-    grid-template-columns: repeat(6, 1fr);
-  }
-`;
-const Label = styled.label`
-  display: block;
-  font-size: 12px;
-  color: #475569;
-  margin-bottom: 6px;
-`;
-const Input = styled.input`
-  width: 100%;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 14px;
-`;
-const Select = styled.select`
-  width: 100%;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 14px;
-  background: #fff;
-`;
-const MainGrid = styled.div`
-  display: grid;
-  gap: 16px;
-  grid-template-columns: 1fr;
-  @media (min-width: 768px) {
-    grid-template-columns: 7fr 5fr;
-  }
-`;
-const Card = styled.div`
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  background: #fff;
-  overflow: hidden;
-`;
-const CardBody = styled.div`
-  padding: 12px;
-`;
-const CardHeader = styled.div`
-  padding: 10px 12px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #f1f5f9;
-  font-weight: 600;
-`;
-const Small = styled.div`
-  font-size: 12px;
-  color: #64748b;
-`;
-const StyledTable = styled.table`
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-  thead {
-    background: #f8fafc;
-  }
-  th, td {
-    padding: 8px;
-    border-bottom: 1px solid #eef2f7;
-    text-align: left;
-  }
-  tbody tr:nth-child(even) {
-    background: #fafafa;
-  }
-  td.right { text-align: right; }
-`;
-const Toolbar = styled.div`
-  display: flex;
-  gap: 8px;
-  align-items: center;
-`;
-const Button = styled.button`
-  border: 1px solid #e2e8f0;
-  background: #fff;
-  border-radius: 8px;
-  padding: 6px 12px;
-  font-size: 14px;
-  cursor: pointer;
-  &:disabled { opacity: .5; cursor: default; }
-`;
-const Row = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-`;
-const Muted = styled.div`
-  color: #64748b;
-  font-size: 13px;
-`;
+// 레전드(라벨 + 건수 + 퍼센트)
+const LegendWithPercent = ({ payload }: any) => {
+  const total = payload.reduce((s: number, p: any) => s + (p?.payload?.value ?? 0), 0);
+  return (
+    <ul style={{ listStyle: "none", padding: 0, margin: 0, width: LEGEND_W }}>
+      {payload.map((e: any, i: number) => {
+        const v = e?.payload?.value ?? 0;
+        const pct = total ? (v / total) * 100 : 0;
+        return (
+          <li key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+            <span style={{ width: 14, height: 14, background: e.color }} />
+            <span style={{ fontSize: 14 }}>
+              {e.value} {v} ({fmt(pct, 1)}%)
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+};
 
-/* ================= Component ================= */
-export default function HistoryDashboard(): ReactNode {
-  // lazy init for range
-  const [filters, setFilters] = useState<Filters>(() => {
-    const { from, to } = defaultRange();
-    return { from, to, type: "", keyword: "", sort: "date,desc", page: 1, size: 20 };
+export default function HistoryDashboard() {
+  const [filters, setFilters] = useState<Filters>({
+    from: RANGE_MIN,
+    to: RANGE_MAX,
+    type: "",
+    sort: "date,desc",
+    page: 1,
+    size: 20,
   });
 
   const [list, setList] = useState<HistoryList>({ items: [], page: 1, size: 20, total: 0 });
   const [stats, setStats] = useState<Stats>({ total: 0, correct: 0, wrong: 0, unsolved: 0, accuracy: 0 });
-  const [insight, setInsight] = useState<string>("");
+  const [summary, setSummary] = useState<string>("");
+  const [summaryLoading, setSummaryLoading] = useState(true);
 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string>("");
@@ -212,28 +118,53 @@ export default function HistoryDashboard(): ReactNode {
     let alive = true;
     setLoading(true);
     setErr("");
+
     const t = setTimeout(async () => {
       try {
-        const [l, s, i] = await Promise.all([getHistory(filters), getStats(filters), getInsights(filters)]);
+        const l = await getHistory(filters);
         if (!alive) return;
         setList(l);
+
+        const s = await getStats(filters);
+        if (!alive) return;
         setStats(s);
-        setInsight(i.comment);
       } catch (e: any) {
         if (!alive) return;
         setErr(e?.message || "데이터 불러오기 실패");
+        setStats({ total: 0, correct: 0, wrong: 0, unsolved: 0, accuracy: 0 });
       } finally {
         if (alive) setLoading(false);
       }
-    }, 200);
-    return () => { alive = false; clearTimeout(t); };
-  }, [filters.from, filters.to, filters.type, filters.keyword, filters.sort, filters.page, filters.size]);
+    }, 150);
+
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [filters.from, filters.to, filters.type, filters.sort, filters.page, filters.size]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        setSummaryLoading(true);
+        const s = await getSummary();
+        if (!alive) return;
+        setSummary(s.comment || "");
+      } catch {
+        if (!alive) return;
+        setSummary("");
+      } finally {
+        if (alive) setSummaryLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
 
   const accuracyPct = useMemo(
     () => (stats.total - stats.unsolved > 0 ? stats.accuracy * 100 : 0),
     [stats]
   );
-
   const pieData = useMemo(
     () => [
       { name: "정답", value: stats.correct, key: "correct" as const },
@@ -243,145 +174,193 @@ export default function HistoryDashboard(): ReactNode {
     [stats]
   );
 
-  const COLORS = ["#16a34a", "#ef4444", "#9ca3af"];
+  const COLOR_VAR: Record<ResultKind, string> = {
+    correct: "var(--color-correct)",
+    wrong: "var(--color-wrong)",
+    unsolved: "var(--color-unsolved)",
+  };
 
   const setPage = (p: number) => setFilters((f) => ({ ...f, page: p }));
   const setSize = (s: number) => setFilters((f) => ({ ...f, size: s, page: 1 }));
 
   return (
-    <Page>
-      <Title>내 이력 보기</Title>
+    <div className="hd hd-page">
+      <h1 className="hd-title">과거 이력</h1>
 
-      {/* Filters */}
-      <FiltersGrid>
+      <div className="hd-main">
+        {/* Left */}
         <div>
-          <Label>시작일</Label>
-          <Input type="date" value={filters.from || ""} onChange={(e) => setFilters((f) => ({ ...f, from: e.target.value, page: 1 }))} />
-        </div>
-        <div>
-          <Label>종료일</Label>
-          <Input type="date" value={filters.to || ""} onChange={(e) => setFilters((f) => ({ ...f, to: e.target.value, page: 1 }))} />
-        </div>
-        <div>
-          <Label>타입</Label>
-          <Select value={filters.type || ""} onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value, page: 1 }))}>
-            <option value="">전체</option>
-            <option value="예측">예측</option>
-            <option value="실제">실제</option>
-          </Select>
-        </div>
-        <div>
-          <Label>검색</Label>
-          <Input placeholder="키워드" value={filters.keyword || ""} onChange={(e) => setFilters((f) => ({ ...f, keyword: e.target.value, page: 1 }))} />
-        </div>
-      </FiltersGrid>
+          <div className="hd-filters">
+            <div>
+              <label className="hd-label">시작일</label>
+              <input
+                type="date"
+                min={RANGE_MIN}
+                max={RANGE_MAX}
+                value={filters.from || ""}
+                onChange={(e) => setFilters((f) => ({ ...f, from: clampDate(e.target.value), page: 1 }))}
+              />
+            </div>
+            <div>
+              <label className="hd-label">종료일</label>
+              <input
+                type="date"
+                min={RANGE_MIN}
+                max={RANGE_MAX}
+                value={filters.to || ""}
+                onChange={(e) => setFilters((f) => ({ ...f, to: clampDate(e.target.value), page: 1 }))}
+              />
+            </div>
+            <div>
+              <label className="hd-label">타입</label>
+              <select
+                value={filters.type || ""}
+                onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value as Filters["type"], page: 1 }))}
+              >
+                <option value="">전체</option>
+                <option value="매수">매수</option>
+                <option value="매도">매도</option>
+              </select>
+            </div>
+          </div>
 
-      <MainGrid>
-        {/* Left: table */}
-        <div>
-          <Card>
-            <CardHeader>
+          <div className="hd-card">
+            <div className="hd-card-header">
               <div>이력</div>
-              <Toolbar>
-                <Select value={filters.size} onChange={(e) => setSize(Number(e.target.value))}>
+              <div className="hd-toolbar">
+                <select value={filters.size} onChange={(e) => setSize(Number(e.target.value))}>
                   <option value={10}>10</option>
                   <option value={20}>20</option>
                   <option value={50}>50</option>
-                </Select>
-                <Select value={filters.sort} onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}>
+                </select>
+                <select value={filters.sort} onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}>
                   <option value="date,desc">날짜 최신순</option>
-                  <option value="date,asc">날짜 오래된순</option>
-                </Select>
-              </Toolbar>
-            </CardHeader>
+                  <option value="date,asc">날짜 과거순</option>
+                </select>
+              </div>
+            </div>
 
-            <CardBody>
-              <StyledTable>
-                <thead>
-                  <tr>
-                    <th>날짜</th>
-                    <th>타입</th>
-                    <th>예측</th>
-                    <th>결과</th>
-                    <th className="right">PnL</th>
-                    <th>메모</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#64748b" }}>불러오는 중</td></tr>
-                  ) : list.items.length === 0 ? (
-                    <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#64748b" }}>데이터 없음</td></tr>
-                  ) : (
-                    list.items.map((r) => (
-                      <tr key={r.id}>
-                        <td>{r.date}</td>
-                        <td>{r.type || ""}</td>
-                        <td>{r.answer || "-"}</td>
-                        <td>
-                          {r.result === "correct" && <span style={{ color: "#16a34a" }}>정답</span>}
-                          {r.result === "wrong" && <span style={{ color: "#ef4444" }}>오답</span>}
-                          {r.result === "unsolved" && <span style={{ color: "#6b7280" }}>미풀이</span>}
+            <div className="hd-card-body">
+              <div className="hd-table-scroll">
+                <table className="hd-table">
+                  <thead>
+                    <tr>
+                      <th>날짜</th>
+                      <th>매수/매도</th>
+                      <th>예측</th>
+                      <th>실제</th>
+                      <th>결과</th>
+                      <th className="right">PnL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr>
+                        <td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#64748b" }}>
+                          불러오는 중
                         </td>
-                        <td className="right">{r.pnl ?? "-"}</td>
-                        <td>{r.note ?? ""}</td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </StyledTable>
+                    ) : list.items.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#64748b" }}>
+                          데이터 없음
+                        </td>
+                      </tr>
+                    ) : (
+                      list.items.map((r) => (
+                        <tr key={r.id}>
+                          <td>{r.date}</td>
+                          <td>{r.type}</td>
+                          <td>{r.answer || "-"}</td>
+                          <td>{r.actual ?? "-"}</td>
+                          <td>
+                            {r.result === "correct" && <span className="hd-result-correct">정답</span>}
+                            {r.result === "wrong" && <span className="hd-result-wrong">오답</span>}
+                            {r.result === "unsolved" && <span className="hd-result-unsolved">미풀이</span>}
+                          </td>
+                          <td className="right">{r.pnl ?? "-"}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
 
-              <Row style={{ marginTop: 12 }}>
-                <Muted>
+              <div className="hd-row hd-pagination" style={{ marginTop: 12 }}>
+                <div className="hd-muted">
                   총 {list.total}건 • {list.page}/{Math.max(1, Math.ceil(list.total / list.size))} 페이지
-                </Muted>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <Button onClick={() => setPage(1)} disabled={list.page <= 1}>처음</Button>
-                  <Button onClick={() => setPage(list.page - 1)} disabled={list.page <= 1}>이전</Button>
-                  <Button onClick={() => setPage(list.page + 1)} disabled={list.page >= Math.ceil(list.total / list.size)}>다음</Button>
-                  <Button onClick={() => setPage(Math.max(1, Math.ceil(list.total / list.size)))} disabled={list.page >= Math.ceil(list.total / list.size)}>마지막</Button>
                 </div>
-              </Row>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="hd-btn" onClick={() => setPage(1)} disabled={list.page <= 1}>처음</button>
+                  <button className="hd-btn" onClick={() => setPage(list.page - 1)} disabled={list.page <= 1}>이전</button>
+                  <button
+                    className="hd-btn"
+                    onClick={() => setPage(list.page + 1)}
+                    disabled={list.page >= Math.ceil(list.total / list.size)}
+                  >다음</button>
+                  <button
+                    className="hd-btn"
+                    onClick={() => setPage(Math.max(1, Math.ceil(list.total / list.size)))}
+                    disabled={list.page >= Math.ceil(list.total / list.size)}
+                  >마지막</button>
+                </div>
+              </div>
 
               {err && <div style={{ marginTop: 8, color: "#dc2626", fontSize: 13 }}>{err}</div>}
-            </CardBody>
-          </Card>
+            </div>
+          </div>
         </div>
 
-        {/* Right: pie + insight */}
-        <div>
-          <Card>
-            <CardHeader>
+        {/* Right */}
+        <div className="hd-right">
+          <div className="hd-card chart-card">
+            <div className="hd-card-header">
               <div>정답/오답/미풀이</div>
-              <Small>정확도 {fmt(accuracyPct)}%</Small>
-            </CardHeader>
-            <CardBody>
-              <div style={{ height: 260 }}>
+              <span className="hd-small">정확도 {fmt(accuracyPct)}%</span>
+            </div>
+            <div className="hd-card-body">
+              <div className="chart-wrapper">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie dataKey="value" data={pieData} innerRadius={60} outerRadius={90} label>
-                      {pieData.map((entry, index) => (
-                        <Cell key={`c-${entry.key}`} fill={COLORS[index % COLORS.length]} />
+                    <Pie
+                      dataKey="value"
+                      data={pieData}
+                      innerRadius={0}
+                      outerRadius={120}
+                      paddingAngle={3}
+                      label={false}
+                      labelLine={false}
+                      stroke="none"
+                      cx="45%"                 // 파이 중심 고정
+                    >
+                      {pieData.map((entry) => (
+                        <Cell key={`c-${entry.key}`} fill={COLOR_VAR[entry.key]} />
                       ))}
                     </Pie>
                     <Tooltip formatter={(v: number) => `${v}건`} />
-                    <Legend />
+                    <Legend
+                      layout="vertical"
+                      align="right"
+                      verticalAlign="middle"
+                      wrapperStyle={{ width: LEGEND_W }}   // 레전드 폭 고정
+                      content={<LegendWithPercent />}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-            </CardBody>
-          </Card>
+            </div>
+          </div>
 
-          <Card style={{ marginTop: 16 }}>
-            <CardHeader>통계 요약</CardHeader>
-            <CardBody>
-              <div style={{ whiteSpace: "pre-wrap", color: "#334155", fontSize: 14 }}>
-                {loading && !insight ? "분석 중" : insight || "요약 코멘트 없음"}
+          <div className="hd-card summary-card">
+            <div className="hd-card-header">성과 요약</div>
+            <div className="hd-card-body" style={{ display: "flex", alignItems: "center" }}>
+              <div style={{ whiteSpace: "pre-wrap", color: "#334155", fontSize: 16, lineHeight: 1.6 }}>
+                {summaryLoading ? "분석 중" : summary || "요약 코멘트 없음"}
               </div>
-            </CardBody>
-          </Card>
+            </div>
+          </div>
         </div>
-      </MainGrid>
-    </Page>
+      </div>
+    </div>
   );
 }
